@@ -220,15 +220,18 @@ fn main() -> Result<()> {
     let compound = get_variant!(root[""].ty, ValueType::Compound);
     let inventory = get_variant!(compound["Inventory"].ty, ValueType::List);
 
-    let mut items = Vec::new();
-    for (index, entry) in inventory.iter().enumerate() {
-        items.push(ItemEntry {
+    let mut items: Vec<ItemEntry> = inventory
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| ItemEntry {
             index,
             size: entry.size(),
             start: entry.start,
             end: entry.end,
         })
-    }
+        .collect();
+    items.sort_by_key(|item| item.size);
+    items.reverse();
 
     if items.is_empty() {
         bail!("Inventory is empty");
@@ -237,8 +240,6 @@ fn main() -> Result<()> {
     let size = compound["Inventory"].size();
     println!("Total inventory size is {} bytes", size);
     println!("All inventory items ranked by size:");
-    items.sort_by_key(|item| item.size);
-    items.reverse();
     for item in &items {
         println!("Slot {}: {} bytes", item.index, item.size);
     }
