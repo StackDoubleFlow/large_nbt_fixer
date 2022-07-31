@@ -191,11 +191,12 @@ fn get_input() -> Result<String> {
     Ok(buffer)
 }
 
-struct ItemEntry {
+struct ItemEntry<'a> {
     index: usize,
     size: usize,
     start: usize,
     end: usize,
+    id: &'a str,
 }
 
 fn main() -> Result<()> {
@@ -218,18 +219,21 @@ fn main() -> Result<()> {
     let nbt = NBTReader::new(data.clone()).read()?;
     let root = get_variant!(nbt.ty, ValueType::Compound);
     let compound = get_variant!(root[""].ty, ValueType::Compound);
-    let inventory = get_variant!(compound["Inventory"].ty, ValueType::List);
+    let inventory_val = &compound["Inventory"];
+    let inventory = get_variant!(inventory_val.ty, ValueType::List);
 
-    let mut items: Vec<ItemEntry> = inventory
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| ItemEntry {
+    let mut items = Vec::with_capacity(inventory.len());
+    for (index, entry) in inventory.iter().enumerate() {
+        let item = get_variant!(entry.ty, ValueType::Compound);
+        let id = get_variant!(item["id"].ty, ValueType::String);
+        items.push(ItemEntry {
             index,
             size: entry.size(),
             start: entry.start,
             end: entry.end,
-        })
-        .collect();
+            id,
+        });
+    }
     items.sort_by_key(|item| item.size);
     items.reverse();
 
@@ -241,7 +245,7 @@ fn main() -> Result<()> {
     println!("Total inventory size is {} bytes", size);
     println!("All inventory items ranked by size:");
     for item in &items {
-        println!("Slot {}: {} bytes", item.index, item.size);
+        println!("Slot {}: {} bytes ({})", item.index, item.size, item.id);
     }
 
     print!("Which slot would you like to delete? ");
@@ -253,13 +257,18 @@ fn main() -> Result<()> {
         .find(|item| item.index == n)
         .context("Slot not found")?;
     println!("Deleting item...");
+    // Fix length of list
+    let len_range = inventory_val.start + 1..inventory_val.start + 5;
+    data.splice(len_range, (inventory.len() as i32 - 1).to_be_bytes());
+    // Remove item in list
     data.drain(item.start..item.end);
+
 
     println!("Compressing...");
     let file = File::create(path)?;
     let mut encoder = GzEncoder::new(file, Compression::new(9));
     encoder.write_all(&data)?;
 
-    println!("Done! New inventory size is {}", size - item.size + 1);
+    println!("Done! New inventory size is {} bytes", size - item.size);
     Ok(())
 }
